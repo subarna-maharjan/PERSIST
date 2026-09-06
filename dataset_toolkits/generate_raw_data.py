@@ -1248,24 +1248,41 @@ def generate_level_chunk(seeds, args, dataset_params, device=torch.device("cpu")
         used_seeds.add(s)
         return s
 
-    for seed_to_gen in seeds_to_gen:
-        status = env_process_executor(int(seed_to_gen))
-        # If the level was discarded (player in water / violent shake / corrupt),
-        # retry the SLOT with fresh random seeds until one is clean or we hit the cap.
-        attempts = 0
-        while status == "skipped" and args.skip_on_water and attempts < args.max_reseed_attempts:
-            new_seed = _fresh_seed()
-            attempts += 1
+    # Produce EXACTLY `target` clean levels for this worker. `target` is the
+    # worker's share of --num_levels that isn't already on disk. We draw the planned
+    # seeds first, then fall back to fresh unique seeds, RETRYING on both "skipped"
+    # (water / violent shake / visibility discard) and "error" (env crash) until the
+    # full quota of clean levels is saved. This makes the final dataset size exact
+    # regardless of how many seeds land in water - a discarded seed does not shrink
+    # the dataset, it just gets replaced by a fresh one. A generous safety cap avoids
+    # an infinite loop if generation is systemically broken.
+    target = len(seeds_to_gen)
+    planned = deque(seeds_to_gen)
+    saved = 0
+    attempts = 0
+    max_attempts = target * (args.max_reseed_attempts + 1) + 100
+    while saved < target and attempts < max_attempts:
+        seed_to_gen = int(planned.popleft()) if planned else _fresh_seed()
+        attempts += 1
+        status = env_process_executor(seed_to_gen)
+        if status == "saved":
+            saved += 1
             logger.info(
-                f"Reseed attempt {attempts}/{args.max_reseed_attempts} for a discarded "
-                f"level: trying seed {new_seed}"
+                f"rank {args.rank}: saved {saved}/{target} clean levels "
+                f"(seed {seed_to_gen}, attempt {attempts})"
             )
-            status = env_process_executor(new_seed)
-        if status == "skipped":
-            logger.warning(
-                f"Gave up on a level after {args.max_reseed_attempts} reseed attempts "
-                f"(kept landing in water / shaking)."
+        else:
+            logger.info(
+                f"rank {args.rank}: level {seed_to_gen} -> {status}; drawing a "
+                f"replacement seed ({saved}/{target} saved, attempt {attempts}/{max_attempts})"
             )
+    if saved < target:
+        logger.warning(
+            f"rank {args.rank}: only produced {saved}/{target} levels after {attempts} "
+            f"attempts (hit safety cap). Something may be wrong with generation."
+        )
+    else:
+        logger.info(f"rank {args.rank}: DONE - {saved}/{target} clean levels saved.")
 
 
 if __name__ == "__main__":

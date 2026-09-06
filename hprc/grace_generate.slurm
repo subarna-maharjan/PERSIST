@@ -34,7 +34,10 @@ mkdir -p logs
 SIF="${SIF:-$SCRATCH/craftium.sif}"
 ENV="${ENVID:-OpenWorldCreative-v0}"
 FRAMES="${FRAMES:-600}"
-TRAIN_N="${TRAIN_N:-150}"; EVAL1_N="${EVAL1_N:-45}"; EVAL2_N="${EVAL2_N:-19}"
+# Final dataset sizes (guaranteed exact - water/shake discards are auto-replaced
+# with fresh seeds by the generator, so a skip never shrinks the count).
+# eval = 400 total, split 70/30 -> eval1 280, eval2 120.
+TRAIN_N="${TRAIN_N:-1000}"; EVAL1_N="${EVAL1_N:-280}"; EVAL2_N="${EVAL2_N:-120}"
 # One worker per 2 cores by default (a Grace node has 48 cores -> 24 workers).
 WORKERS="${WORKERS:-$(( ${SLURM_CPUS_PER_TASK:-48} / 2 ))}"
 [ "$WORKERS" -lt 1 ] && WORKERS=1

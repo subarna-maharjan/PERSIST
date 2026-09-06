@@ -42,8 +42,14 @@ WORKERS="${WORKERS:-$(( ${SLURM_CPUS_PER_TASK:-48} / 2 ))}"
 echo "SIF=$SIF  WORKERS=$WORKERS  sizes: train=$TRAIN_N eval1=$EVAL1_N eval2=$EVAL2_N  frames=$FRAMES"
 module load WebProxy 2>/dev/null || true    # outbound internet for the venv build
 
-# Run a bash command string inside the container.
-run() { singularity exec --bind /scratch "$SIF" bash -lc "$1"; }
+# Ephemeral Minetest run dirs are each a full ~15k-file VoxeLibre copy. With many
+# workers that instantly blows Lustre scratch's 250k inode quota, so they MUST go
+# on node-local disk. $TMPDIR is per-job node-local storage on Grace.
+NODELOCAL="${TMPDIR:-/tmp}"
+
+# Run a bash command string inside the container. Bind /scratch AND node-local
+# $TMPDIR so the Minetest run dirs land on local disk, off the inode quota.
+run() { singularity exec --bind /scratch --bind "$NODELOCAL" "$SIF" bash -lc "$1"; }
 
 # --- 1) Build the venv once (clone craftium fork + compile Minetest + torch) ---
 if [ ! -x .venv/bin/python ]; then
@@ -84,6 +90,7 @@ gen() {  # name  entities
     run "cd '$PWD' && source .venv/bin/activate && DISPLAY= python dataset_toolkits/generate_raw_data.py \
       --dataset_dir datasets --dataset_name '$NAME' --env_id '$ENV' --disable_commit_check \
       --ep_timesteps $FRAMES --world_size $WORKERS --rank $r --mt_port $PORT \
+      --mt_run_dir '$NODELOCAL/mt_runs_${NAME}_r${r}' \
       --dynamic_agent_entities \"$ENTS\"" > "logs/${NAME}_rank${r}.out" 2>&1 &
     pids+=($!)
   done

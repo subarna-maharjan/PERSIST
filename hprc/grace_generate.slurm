@@ -49,6 +49,14 @@ run() { singularity exec --bind /scratch "$SIF" bash -lc "$1"; }
 if [ ! -x .venv/bin/python ]; then
   echo "==> Building venv (first run only; ~15-30 min)"
   run "cd '$PWD' && export UV_CACHE_DIR='$SCRATCH/.uv-cache' UV_PYTHON_INSTALL_DIR='$SCRATCH/.uv-python' HF_HOME='$SCRATCH/.hf-cache' XDG_CACHE_HOME='$SCRATCH/.cache' PIP_CACHE_DIR='$SCRATCH/.pip-cache' && bash hprc/setup_env.sh"
+
+  # Reclaim inodes: craftium is installed non-editable into .venv/site-packages
+  # (with our mods), so the ~94k-file source tree and the uv wheel cache are dead
+  # weight at runtime. Deleting them here keeps scratch's 250k inode quota from
+  # filling during generation. (A future full rebuild just re-clones the fork.)
+  echo "==> Post-build cleanup: dropping engine source tree + uv cache (frees ~100k inodes)"
+  rm -rf gym_envs/craftium "$SCRATCH/.uv-cache"
+  df --output=itotal,iused,iavail -i . 2>/dev/null | tail -1 || true
 fi
 
 # --- 2) Species split + init the three datasets (single process) ---

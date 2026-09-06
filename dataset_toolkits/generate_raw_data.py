@@ -27,7 +27,13 @@ for _p in (_REPO_ROOT, _THIS_DIR):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from gym_envs.craftium.craftium.wrappers import NueToEnuVoxelObs, enu_to_nue
+# Prefer the installed craftium package (site-packages) so the ~94k-file source
+# tree (gym_envs/craftium) can be deleted after the build to save inodes on HPRC.
+# Fall back to the in-tree source path for editable/dev checkouts.
+try:
+    from craftium.wrappers import NueToEnuVoxelObs, enu_to_nue
+except ImportError:
+    from gym_envs.craftium.craftium.wrappers import NueToEnuVoxelObs, enu_to_nue
 from utils import get_file_hash, seed_everything
 from utils.action_util import MultiDiscreteActionWrapper
 from dynamic_data import collect_dynamic_data

@@ -65,6 +65,7 @@ from torchvision.io import write_video
 
 from data_loaders.minetest_latent_camera_action_dataset import MinetestLatentCameraActionEval
 from pipelines.pipeline import REQUIRED_MODEL_KEYS, VoxelFirstPipeline, pipeline_variant_overrides
+from utils.voxel_video import render_voxel_video
 
 
 @dataclass
@@ -147,6 +148,15 @@ class Args:
 
     output_dir: str = "outputs/rollouts"
     fps: int = 24
+
+    save_pixel_video: bool = True
+    """Write the decoded RGB (pixel) rollout video."""
+    save_voxel_video: bool = True
+    """Also render and write the voxel-class rollout as a colored video, aligned with the pixel video."""
+    voxel_air_classes: Optional[str] = None
+    """Comma-separated voxel class ids to treat as empty/transparent in the voxel video. Defaults to
+    class 0 plus the most frequent class in each rollout (a robust air/empty heuristic)."""
+
     device: str = "cuda:0"
     """CUDA device for single-process runs. Under `accelerate launch` the device is managed by
     accelerate (one process per GPU) and this is ignored."""
@@ -286,6 +296,20 @@ def main(args: Args):
 
     os.makedirs(args.output_dir, exist_ok=True)
     to_uint8 = lambda x: torch.clamp(((x + 1) / 2) * 255, 0, 255).to(torch.uint8)
+
+    def _write(frames_thwc, path):
+        write_video(
+            path,
+            to_uint8(frames_thwc).cpu(),
+            fps=args.fps,
+            video_codec="libx264",
+            options={"crf": "18", "preset": "veryfast"},
+        )
+        logger.info(f"Saved rollout video to {path}")
+
+    air_classes = (
+        [int(c) for c in args.voxel_air_classes.split(",")] if args.voxel_air_classes else None
+    )
     for batch in dataloader:
         context = build_context(batch, args.num_frames, args.use_camera_gt, args.include_initial_voxel_frame)
         with accelerator.autocast():
@@ -293,7 +317,7 @@ def main(args: Args):
                 context,
                 args.num_frames,
                 output_latents=False,
-                output_decoded_pixels=True,
+                output_decoded_pixels=args.save_pixel_video,
                 pixel_use_x0=args.include_initial_pixel_frame,
                 use_camera_gt=args.use_camera_gt,
                 keep_on_device=False,
@@ -306,16 +330,21 @@ def main(args: Args):
 
         for b, instance_idx in enumerate(batch["instance_idx"].tolist()):
             instance = instances[instance_idx]
-            out_path = os.path.join(args.output_dir, f"{args.pipeline_variant}_{instance}.mp4")
-            pixel = rearrange(rollout["pixel"][b], "T C H W -> T H W C")
-            write_video(
-                out_path,
-                to_uint8(pixel).cpu(),
-                fps=args.fps,
-                video_codec="libx264",
-                options={"crf": "18", "preset": "veryfast"},
-            )
-            logger.info(f"Saved rollout video to {out_path}")
+            if args.save_pixel_video:
+                pixel = rearrange(rollout["pixel"][b], "T C H W -> T H W C")
+                _write(pixel, os.path.join(args.output_dir, f"{args.pipeline_variant}_{instance}_rgb.mp4"))
+            if args.save_voxel_video:
+                # Render at the pixel-video resolution so the two videos line up frame-for-frame.
+                H, W = rollout["pixel"].shape[-2:] if "pixel" in rollout else (batch["raw_images"].shape[-2], batch["raw_images"].shape[-1])
+                voxel_frames = render_voxel_video(
+                    rollout["voxel"][b],
+                    rollout["camera"][b],
+                    height=H,
+                    width=W,
+                    device=device,
+                    air_classes=air_classes,
+                )
+                _write(voxel_frames, os.path.join(args.output_dir, f"{args.pipeline_variant}_{instance}_voxel.mp4"))
 
         if distributed:
             accelerator.wait_for_everyone()

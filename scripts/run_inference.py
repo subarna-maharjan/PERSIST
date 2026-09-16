@@ -157,6 +157,11 @@ class Args:
     """Comma-separated voxel class ids to treat as empty/transparent in the voxel video. Defaults to
     class 0 plus the most frequent class in each rollout (a robust air/empty heuristic)."""
 
+    save_voxel_grids: bool = False
+    """Also dump the raw rollout tensors to <output_dir>/<variant>_<instance>.npz: the voxel-class
+    grids (T, X, Y, Z int16), the voxel-local camera trajectory (T, 10), and the action sequence
+    (T, action_dim). Load with numpy.load(...); keys: 'voxel', 'camera', 'action'."""
+
     device: str = "cuda:0"
     """CUDA device for single-process runs. Under `accelerate launch` the device is managed by
     accelerate (one process per GPU) and this is ignored."""
@@ -345,6 +350,16 @@ def main(args: Args):
                     air_classes=air_classes,
                 )
                 _write(voxel_frames, os.path.join(args.output_dir, f"{args.pipeline_variant}_{instance}_voxel.mp4"))
+            if args.save_voxel_grids:
+                npz_path = os.path.join(args.output_dir, f"{args.pipeline_variant}_{instance}.npz")
+                import numpy as np
+                np.savez_compressed(
+                    npz_path,
+                    voxel=rollout["voxel"][b].to(torch.int16).cpu().numpy(),   # (T, X, Y, Z) class ids
+                    camera=rollout["camera"][b].float().cpu().numpy(),          # (T, 10) voxel-local [6d, xyz, fov]
+                    action=rollout["action"][b].float().cpu().numpy(),          # (T, action_dim)
+                )
+                logger.info(f"Saved rollout voxel grids to {npz_path}")
 
         if distributed:
             accelerator.wait_for_everyone()

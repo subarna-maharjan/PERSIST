@@ -38,11 +38,18 @@ def dataset_root(explicit=None):
 
 
 def read_first_and_all(path):
-    """Return (frame0 uint8 HxWx3, all_frames uint8 TxHxWx3) for a video file."""
-    from torchvision.io import read_video
-    v, _, _ = read_video(path, pts_unit="sec")   # (T, H, W, 3) uint8
-    v = v.numpy()
-    return v[0], v
+    """Return (frame0 uint8 HxWx3, all_frames uint8 TxHxWx3) for a video file.
+
+    Uses the imageio-ffmpeg subprocess decoder rather than torchvision/PyAV's
+    in-process scaler, which can fail with 'Resource temporarily unavailable'
+    on resource-capped login nodes.
+    """
+    import imageio.v2 as imageio
+    rd = imageio.get_reader(path, format="FFMPEG")
+    frames = [np.asarray(f) for f in rd]
+    rd.close()
+    arr = np.stack(frames, axis=0)   # (T, H, W, 3) uint8
+    return arr[0], arr
 
 
 def psnr(a, b):

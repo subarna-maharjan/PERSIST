@@ -6,8 +6,9 @@ set -u
 cd ~/PERSIST
 source .venv/bin/activate
 
-# >>> set this to a currently-FREE GPU index (check with nvidia-smi) <<<
-export CUDA_VISIBLE_DEVICES=0
+# GPU index: honor one already exported by the caller (e.g. wait_and_run.sh),
+# otherwise default to 0.  Check free GPUs with nvidia-smi before running by hand.
+export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES:-0}"
 
 INST=level_002
 OUTDIR=outputs/${INST}/first_frame_pvc      # p(ixel) v(oxel) c(amera) seeded at frame 0

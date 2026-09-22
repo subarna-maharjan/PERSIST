@@ -29,11 +29,23 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 # A100 arch, so nvdiffrast/JIT kernels compile for the right target.
 export TORCH_CUDA_ARCH_LIST=8.0
+# nvdiffrast JIT-compiles a C++/CUDA plugin on first use; keep its build cache on
+# scratch (home has a quota) and force a clean rebuild location.
+export TORCH_EXTENSIONS_DIR="$SCRATCH/torch_extensions"
+mkdir -p "$TORCH_EXTENSIONS_DIR"
 
 module purge
-# Load the CUDA toolkit the venv's torch (cu126) was built against, if provided by Grace.
-# Adjust the exact module name to what `module spider CUDA` shows on Grace.
+# GCC >= 9 is REQUIRED: nvdiffrast's plugin fails to compile with the old system
+# c++ ("We need GCC 9 or later"). Load a modern GCC before CUDA. Adjust the exact
+# version to whatever `module spider GCC` lists on Grace.
+module load GCC/12.3.0 2>/dev/null \
+  || module load GCC/11.3.0 2>/dev/null \
+  || module load GCC/12.2.0 2>/dev/null \
+  || module load GCCcore/12.3.0 2>/dev/null \
+  || echo "WARN: no GCC module loaded -- nvdiffrast build will likely fail"
+# Load the CUDA toolkit the venv's torch (cu126) was built against.
 module load CUDA/12.6.0 2>/dev/null || echo "note: CUDA module not loaded (relying on venv/runtime CUDA)"
+echo "=== compiler: $(c++ --version | head -1) ==="
 
 source .venv/bin/activate
 

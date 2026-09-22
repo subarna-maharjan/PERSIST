@@ -6,7 +6,10 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --gres=gpu:1
+# Request an A100 (40GB). A generic gpu:1 gave a ~24GB card that OOM'd on the
+# XL voxel-VAE step. Confirm the type name with `sinfo -o "%P %G %N" | grep -i gpu`;
+# if A100 isn't offered here, try --gres=gpu:a100:1 on a partition that has it.
+#SBATCH --gres=gpu:a100:1
 #SBATCH --partition=gpu
 # >>> account with SUs. 132689579351 is overdrawn; 132689576523 (Zhang, Cheng,
 #     FY2027) has a full 100000 SU balance. Check with `myproject` before submitting. <<<
@@ -27,6 +30,9 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-$SCRATCH/uv_cache}"
 # Force offline: never touch the network from a compute node.
 export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
+# Reduce CUDA memory fragmentation (PyTorch's own OOM hint). Helps the big
+# voxel-VAE conv3d allocation fit without a larger reserved-but-unallocated pool.
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # A100 arch, so nvdiffrast/JIT kernels compile for the right target.
 export TORCH_CUDA_ARCH_LIST=8.0
 # nvdiffrast JIT-compiles a C++/CUDA plugin on first use; keep its build cache on

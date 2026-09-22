@@ -8,8 +8,9 @@
 #SBATCH --mem=64G
 #SBATCH --gres=gpu:1
 #SBATCH --partition=gpu
-# >>> account with SUs (Grace default was negative; use the project account) <<<
-#SBATCH --account=132689579351
+# >>> account with SUs. 132689579351 is overdrawn; 132689576523 (Zhang, Cheng,
+#     FY2027) has a full 100000 SU balance. Check with `myproject` before submitting. <<<
+#SBATCH --account=132689576523
 
 # ---- level_002 full-GT-camera rollout on TAMU Grace ----
 # Seed frame 0 with GT pixel + GT voxel; feed all 600 GT camera poses AND all 600

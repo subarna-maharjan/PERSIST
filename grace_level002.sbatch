@@ -47,9 +47,15 @@ module load GCC/12.3.0 2>/dev/null \
 module load CUDA/12.6.0 2>/dev/null || echo "note: CUDA module not loaded (relying on venv/runtime CUDA)"
 echo "=== compiler: $(c++ --version | head -1) ==="
 
+# Drop any auto-activated conda env(s) so they don't shadow the module GCC/CUDA
+# or the venv's python/libstdc++. Harmless if conda isn't active.
+conda deactivate 2>/dev/null || true
+conda deactivate 2>/dev/null || true
+
 source .venv/bin/activate
 
 echo "=== node: $(hostname) ==="
+echo "=== python: $(which python) ==="
 nvidia-smi --query-gpu=index,name,memory.total --format=csv
 python -c "import nvdiffrast, torch; print('nvdiffrast OK, torch', torch.__version__, 'cuda', torch.cuda.is_available())"
 
